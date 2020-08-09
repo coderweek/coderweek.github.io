@@ -19,3 +19,10 @@ server.listen(port, hostname, () => {
   console.log(`Server running at http://${hostname}:${port}/`);
 });
 ```
+这里使用了nodejs原生模块http来启动一个服务；
+
+实际上，http模块是调用了nodejs的另外一个原生模块net。那么net启动一个服务，是什么样子呢？我们看下官方的样例：
+
+```js
+
+```

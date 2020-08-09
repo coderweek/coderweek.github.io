@@ -20,4 +20,17 @@ const server = http.createServer((req, res) =&gt; {
 server.listen(port, hostname, () =&gt; {
   console.log(`Server running at http://${hostname}:${port}/`);
 });</code></pre>
-</body></html>
+<p>这里使用了nodejs原生模块http来启动一个服务；</p>
+<p>实际上，http模块是调用了nodejs的另外一个原生模块net。那么net启动一个服务，是什么样子呢？我们看下官方的样例：</p>
+<pre><code class="language-js"></code></pre>
+
+<script src="https://utteranc.es/client.js"
+        repo="coderweek/coderweek.github.io"
+        issue-term="pathname"
+        label="fromgithubpages"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+</body>
+</html>

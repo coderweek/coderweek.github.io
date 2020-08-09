@@ -1,0 +1,23 @@
+
+<!DOCTYPE html>
+<head></head>
+<body>
+<h1 id="nodejs服务启动以及工作全过程分析">nodejs服务启动以及工作全过程分析</h1>
+<p>本文将分析一个普通的nodejs服务启动和工作的全部过程；将会涉及libuv；</p>
+<h2 id="回顾一下nodejs如何启动服务">回顾一下nodejs如何启动服务</h2>
+<p>按照nodejs官网上的样例，启动一个服务如下：</p>
+<pre><code class="language-js">const http = require(&#39;http&#39;);
+
+const hostname = &#39;127.0.0.1&#39;;
+const port = 3000;
+
+const server = http.createServer((req, res) =&gt; {
+  res.statusCode = 200;
+  res.setHeader(&#39;Content-Type&#39;, &#39;text/plain&#39;);
+  res.end(&#39;Hello World&#39;);
+});
+
+server.listen(port, hostname, () =&gt; {
+  console.log(`Server running at http://${hostname}:${port}/`);
+});</code></pre>
+</body></html>

@@ -6,27 +6,7 @@
 
 </head>
 <body>
-<h1 id="nodejs服务启动以及工作全过程分析">nodejs服务启动以及工作全过程分析</h1>
-<p>本文将分析一个普通的nodejs服务启动和工作的全部过程；将会涉及libuv；</p>
-<h2 id="回顾一下nodejs如何启动服务">回顾一下nodejs如何启动服务</h2>
-<p>按照nodejs官网上的样例，启动一个服务如下：</p>
-<pre><code class="language-js">const http = require(&#39;http&#39;);
-
-const hostname = &#39;127.0.0.1&#39;;
-const port = 3000;
-
-const server = http.createServer((req, res) =&gt; {
-  res.statusCode = 200;
-  res.setHeader(&#39;Content-Type&#39;, &#39;text/plain&#39;);
-  res.end(&#39;Hello World&#39;);
-});
-
-server.listen(port, hostname, () =&gt; {
-  console.log(`Server running at http://${hostname}:${port}/`);
-});</code></pre>
-<p>这里使用了nodejs原生模块http来启动一个服务；</p>
-<p>实际上，http模块是调用了nodejs的另外一个原生模块net。那么net启动一个服务，是什么样子呢？我们看下官方的样例：</p>
-<pre><code class="language-js"></code></pre>
+<p><a href="./nodeserverdeep.html">深入node server启动和处理过程</a></p>
 
 <script src="https://utteranc.es/client.js"
         repo="coderweek/coderweek.github.io"

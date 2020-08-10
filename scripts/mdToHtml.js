@@ -1,7 +1,7 @@
 const marked = require('marked');
 const fs = require('fs');
-const source = `./markdown/${process.argv[2]}/index.md`;
-const target = `./html/${process.argv[2]}/index.html`;
+const source = `./markdown/${process.argv[2]}/${process.argv[3]}.md`;
+const target = `./html/${process.argv[2]}/${process.argv[3]}.html`;
 const html = marked(fs.readFileSync(source,'utf8'));
 
 let page = `

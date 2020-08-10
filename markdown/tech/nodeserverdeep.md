@@ -75,11 +75,12 @@ server.listen(9090, () => {
   * 代码放置在/lib目录下。
   * 举例：net.js, http.js, fs.js, util.js等
 
-net模块，即/lib/net.js, 就是native模块，是由js语言开发的。
+net模块，即/lib/net.js, 就是原生模块，也叫native模块；是由js语言开发的。
 
 ### net如何创建一个服务？
 net常用的创建服务如下：
 ```js
+// connectionListener就是一个普通的回调函数，负责处理业务逻辑。
 const server = net.createServer(connectionListener);
 ```
 在/lib/net.js中，net.createServer代码如下：
@@ -98,6 +99,45 @@ Server这里是一个构建函数，里面的代码大概50行，但核心主要
   
 这样，一旦有请求事件过来，则执行connectionListener。
 
-那么此时你一定会想知道，请求事件是怎么过来的呢？
+那么此时你一定会想知道，请求事件是怎么传过来的呢？从网卡收到tcp数据包，到执行connectionListener，都经历了哪些过程呢？
 
 接下来我们就来详细分析一下。
+
+### net服务启动过程
+
+一个普通的服务启动，无非要经过以下过程
+* 创建一个socket;
+* 绑定一个ip地址，即bind();
+* 监听端口，即listen();
+
+net.js模块也就是干了这些事情；只不过它把所有这些过程都放在了listen方法中。
+```js
+// 很简单，只是初始化一个Server,并不涉及底层socket调用
+const server = net.createServer(connectionListener);
+// listen是主角，它做了所有的事情，包括创建socket, 调用底层bind,listen等
+server.listen(9090);
+```
+那么我们就来分析一下listen。
+
+#### net模块中listen干了啥？
+抽丝剥茧，listen最终调用了new TCP方法，即build-in模块tcp_wrap.cc模块中的void TCPWrap::New方法。
+```js
+// lib/net.js中createServerHandle函数，大概1218行。
+handle = new TCP(TCPConstants.SERVER);
+```
+>（注：js模块，调用c++模块的方法，本文不展开，感兴趣的可以自己搜索。）
+
+new TCP做了啥？
+```js
+// 调用 TCPWrap; /src/tcp_wrap.cc
+new TCPWrap(env, args.This(), provider);
+```
+
+new TCPWrap则调用了libuv的uv_tcp_init
+
+```js
+int r = uv_tcp_init(env->event_loop(), &handle_);
+```
+
+至此，工作转交给libuv。
+

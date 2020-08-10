@@ -77,10 +77,11 @@ server.listen(9090, () =&gt; {
 </ul>
 </li>
 </ul>
-<p>net模块，即/lib/net.js, 就是native模块，是由js语言开发的。</p>
+<p>net模块，即/lib/net.js, 就是原生模块，也叫native模块；是由js语言开发的。</p>
 <h3 id="net如何创建一个服务？">net如何创建一个服务？</h3>
 <p>net常用的创建服务如下：</p>
-<pre><code class="language-js">const server = net.createServer(connectionListener);</code></pre>
+<pre><code class="language-js">// connectionListener就是一个普通的回调函数，负责处理业务逻辑。
+const server = net.createServer(connectionListener);</code></pre>
 <p>在/lib/net.js中，net.createServer代码如下：</p>
 <pre><code class="language-js">function createServer(options, connectionListener) {
   return new Server(options, connectionListener);
@@ -92,8 +93,34 @@ server.listen(9090, () =&gt; {
 <li>把创建服务时传入的回调函数connectionListener注册监听一下。this.on(&#39;connection&#39;, connectionListener);</li>
 </ul>
 <p>这样，一旦有请求事件过来，则执行connectionListener。</p>
-<p>那么此时你一定会想知道，请求事件是怎么过来的呢？</p>
+<p>那么此时你一定会想知道，请求事件是怎么传过来的呢？从网卡收到tcp数据包，到执行connectionListener，都经历了哪些过程呢？</p>
 <p>接下来我们就来详细分析一下。</p>
+<h3 id="net服务启动过程">net服务启动过程</h3>
+<p>一个普通的服务启动，无非要经过以下过程</p>
+<ul>
+<li>创建一个socket;</li>
+<li>绑定一个ip地址，即bind();</li>
+<li>监听端口，即listen();</li>
+</ul>
+<p>net.js模块也就是干了这些事情；只不过它把所有这些过程都放在了listen方法中。</p>
+<pre><code class="language-js">// 很简单，只是初始化一个Server,并不涉及底层socket调用
+const server = net.createServer(connectionListener);
+// listen是主角，它做了所有的事情，包括创建socket, 调用底层bind,listen等
+server.listen(9090);</code></pre>
+<p>那么我们就来分析一下listen。</p>
+<h4 id="net模块中listen干了啥？">net模块中listen干了啥？</h4>
+<p>抽丝剥茧，listen最终调用了new TCP方法，即build-in模块tcp_wrap.cc模块中的void TCPWrap::New方法。</p>
+<pre><code class="language-js">// lib/net.js中createServerHandle函数，大概1218行。
+handle = new TCP(TCPConstants.SERVER);</code></pre>
+<blockquote>
+<p>（注：js模块，调用c++模块的方法，本文不展开，感兴趣的可以自己搜索。）</p>
+</blockquote>
+<p>new TCP做了啥？</p>
+<pre><code class="language-js">// 调用 TCPWrap; /src/tcp_wrap.cc
+new TCPWrap(env, args.This(), provider);</code></pre>
+<p>new TCPWrap则调用了libuv的uv_tcp_init</p>
+<pre><code class="language-js">int r = uv_tcp_init(env-&gt;event_loop(), &amp;handle_);</code></pre>
+<p>至此，工作转交给libuv。</p>
 
 <script src="https://utteranc.es/client.js"
         repo="coderweek/coderweek.github.io"

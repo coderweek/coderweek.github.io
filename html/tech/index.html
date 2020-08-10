@@ -1,6 +1,10 @@
 
 <!DOCTYPE html>
-<head></head>
+<head>
+<link rel="stylesheet" href="../../style/monokai/monokai.min.css">
+<script src="../../lib/highlightjs/highlight.min.js"></script>
+
+</head>
 <body>
 <h1 id="nodejs服务启动以及工作全过程分析">nodejs服务启动以及工作全过程分析</h1>
 <p>本文将分析一个普通的nodejs服务启动和工作的全部过程；将会涉及libuv；</p>
@@ -32,5 +36,16 @@ server.listen(port, hostname, () =&gt; {
         crossorigin="anonymous"
         async>
 </script>
+
+<script>
+    function highlightCode() {
+        var pres = document.querySelectorAll("pre>code");
+        for (var i = 0; i < pres.length; i++) {
+            hljs.highlightBlock(pres[i]);
+        }
+    }
+    highlightCode();
+</script>
+    
 </body>
 </html>

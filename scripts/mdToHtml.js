@@ -3,9 +3,18 @@ const fs = require('fs');
 const source = `./markdown/${process.argv[2]}/index.md`;
 const target = `./html/${process.argv[2]}/index.html`;
 const html = marked(fs.readFileSync(source,'utf8'));
+
 let page = `
 <!DOCTYPE html>
-<head></head>
+<head>`;
+if(process.argv[2] === 'tech'){
+    page += `
+<link rel="stylesheet" href="../../style/monokai/monokai.min.css">
+<script src="../../lib/highlightjs/highlight.min.js"></script>
+`;
+};
+page += `
+</head>
 <body>
 `;
 
@@ -19,6 +28,21 @@ page += `
         crossorigin="anonymous"
         async>
 </script>
+`;
+if(process.argv[2] === 'tech'){
+    page += `
+<script>
+    function highlightCode() {
+        var pres = document.querySelectorAll("pre>code");
+        for (var i = 0; i < pres.length; i++) {
+            hljs.highlightBlock(pres[i]);
+        }
+    }
+    highlightCode();
+</script>
+    `
+};
+page += `
 </body>
 </html>`;
 fs.writeFile(target, page, () => {});

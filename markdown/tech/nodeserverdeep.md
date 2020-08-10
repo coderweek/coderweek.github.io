@@ -1,5 +1,7 @@
+
+事先声明：本文分析基于nodejs 14版本; 以linux平台为例；
+[TOC]
 # nodejs服务启动以及工作全过程分析
-事先声明：本文分析基于nodejs 14版本。
 
 本文将分析一个普通的nodejs服务启动和工作的全部过程；将会涉及libuv；
 
@@ -77,7 +79,7 @@ server.listen(9090, () => {
 
 net模块，即/lib/net.js, 就是原生模块，也叫native模块；是由js语言开发的。
 
-### net如何创建一个服务？
+### net模块如何创建一个服务？
 net常用的创建服务如下：
 ```js
 // connectionListener就是一个普通的回调函数，负责处理业务逻辑。
@@ -103,7 +105,7 @@ Server这里是一个构建函数，里面的代码大概50行，但核心主要
 
 接下来我们就来详细分析一下。
 
-### net服务启动过程
+### net模块启动服务过程
 
 一个普通的服务启动，无非要经过以下过程
 * 创建一个socket;
@@ -139,5 +141,26 @@ new TCPWrap则调用了libuv的uv_tcp_init
 int r = uv_tcp_init(env->event_loop(), &handle_);
 ```
 
-至此，工作转交给libuv。
+至此，工作转交给libuv。下面我们来看libuv做了啥。
 
+#### libuv在服务启动时承担什么角色
+
+libuv是一个异步I/O的多平台支持库。当初主要是为了 Node.js而诞生；但它也被用在 Luvit 、 Julia 、 pyuv 和 其他项目 。
+
+libuv全局管理一个handle，即loop，所有的异步处理对象，都会挂载到loop下，以方便需要时，直接从loop下查找。
+
+上一节中，net调用tcp_wrap，最终调用uv_tcp_init，就是挂载一些东西到loop下。接下来，我们一步一步分析。
+
+首先uv_tcp_init
+```js
+// 第一个参数，env->event_loop()即使loop对象；
+// 第二个参数 &handle是全局唯一的服务对象，是一个uv_tcp_t实例
+int r = uv_tcp_init(env->event_loop(), &handle_)
+```
+uv_tcp_init最终调用了uv_tcp_init_ex。
+```js
+// 位于/src/deps/uv/src/unix 114行
+
+```
+
+### net模块处理请求过程

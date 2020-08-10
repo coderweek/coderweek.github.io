@@ -9,8 +9,9 @@
 </head>
 <body>
 <div class = "pageContainer">
+<p>事先声明：本文分析基于nodejs 14版本; 以linux平台为例；
+[TOC]</p>
 <h1 id="nodejs服务启动以及工作全过程分析">nodejs服务启动以及工作全过程分析</h1>
-<p>事先声明：本文分析基于nodejs 14版本。</p>
 <p>本文将分析一个普通的nodejs服务启动和工作的全部过程；将会涉及libuv；</p>
 <h2 id="回顾一下nodejs如何启动服务">回顾一下nodejs如何启动服务</h2>
 <p>按照nodejs官网上的样例，启动一个服务如下：</p>
@@ -81,7 +82,7 @@ server.listen(9090, () =&gt; {
 </li>
 </ul>
 <p>net模块，即/lib/net.js, 就是原生模块，也叫native模块；是由js语言开发的。</p>
-<h3 id="net如何创建一个服务？">net如何创建一个服务？</h3>
+<h3 id="net模块如何创建一个服务？">net模块如何创建一个服务？</h3>
 <p>net常用的创建服务如下：</p>
 <pre><code class="language-js">// connectionListener就是一个普通的回调函数，负责处理业务逻辑。
 const server = net.createServer(connectionListener);</code></pre>
@@ -98,7 +99,7 @@ const server = net.createServer(connectionListener);</code></pre>
 <p>这样，一旦有请求事件过来，则执行connectionListener。</p>
 <p>那么此时你一定会想知道，请求事件是怎么传过来的呢？从网卡收到tcp数据包，到执行connectionListener，都经历了哪些过程呢？</p>
 <p>接下来我们就来详细分析一下。</p>
-<h3 id="net服务启动过程">net服务启动过程</h3>
+<h3 id="net模块启动服务过程">net模块启动服务过程</h3>
 <p>一个普通的服务启动，无非要经过以下过程</p>
 <ul>
 <li>创建一个socket;</li>
@@ -123,7 +124,19 @@ handle = new TCP(TCPConstants.SERVER);</code></pre>
 new TCPWrap(env, args.This(), provider);</code></pre>
 <p>new TCPWrap则调用了libuv的uv_tcp_init</p>
 <pre><code class="language-js">int r = uv_tcp_init(env-&gt;event_loop(), &amp;handle_);</code></pre>
-<p>至此，工作转交给libuv。</p>
+<p>至此，工作转交给libuv。下面我们来看libuv做了啥。</p>
+<h4 id="libuv在服务启动时承担什么角色">libuv在服务启动时承担什么角色</h4>
+<p>libuv是一个异步I/O的多平台支持库。当初主要是为了 Node.js而诞生；但它也被用在 Luvit 、 Julia 、 pyuv 和 其他项目 。</p>
+<p>libuv全局管理一个handle，即loop，所有的异步处理对象，都会挂载到loop下，以方便需要时，直接从loop下查找。</p>
+<p>上一节中，net调用tcp_wrap，最终调用uv_tcp_init，就是挂载一些东西到loop下。接下来，我们一步一步分析。</p>
+<p>首先uv_tcp_init</p>
+<pre><code class="language-js">// 第一个参数，env-&gt;event_loop()即使loop对象；
+// 第二个参数 &amp;handle是全局唯一的服务对象，是一个uv_tcp_t实例
+int r = uv_tcp_init(env-&gt;event_loop(), &amp;handle_)</code></pre>
+<p>uv_tcp_init最终调用了uv_tcp_init_ex。</p>
+<pre><code class="language-js">// 位于/src/deps/uv/src/unix 114行
+</code></pre>
+<h3 id="net模块处理请求过程">net模块处理请求过程</h3>
 </div>
 <script src="https://utteranc.es/client.js"
         repo="coderweek/coderweek.github.io"

@@ -7,6 +7,7 @@
 </head>
 <body>
 <h1 id="nodejs服务启动以及工作全过程分析">nodejs服务启动以及工作全过程分析</h1>
+<p>事先声明：本文分析基于nodejs 14版本。</p>
 <p>本文将分析一个普通的nodejs服务启动和工作的全部过程；将会涉及libuv；</p>
 <h2 id="回顾一下nodejs如何启动服务">回顾一下nodejs如何启动服务</h2>
 <p>按照nodejs官网上的样例，启动一个服务如下：</p>
@@ -58,13 +59,41 @@ server.listen(9090, () =&gt; {
 <li>监听9090端口</li>
 </ul>
 <p>如果有请求到来，则执行第2步中设置的回调函数。</p>
-<p>所以，一个普通的nodejs服务，实际上是由net模块来事先的。接下来我们就看下net模块的主要功能，以及它是如何启动，并处理客户端请求的。</p>
+<p>所以，一个普通的nodejs服务，实际上是由net模块来事先的。</p>
+<p>接下来我们就看下net模块的主要功能，以及它是如何启动，并处理客户端请求的。</p>
 <h2 id="net模块">net模块</h2>
 <h3 id="net模块是什么？">net模块是什么？</h3>
-<p>nodejs是由c++编写的。核心的处理逻辑，都是c++语言开发的，这些模块官方称为build-in模块；代码放置在/src目录下。</p>
-<p>由于nodejs是给js开发者写的，因此又封装了一层js模块给js开发者使用，这部分模块官方称为native模块（相对于js开发者自己写的逻辑模块而言）；代码防止在/lib目录下。</p>
-<p>net模块就是native模块，是由js语言开发的。类似的native模块还有http, fs等大家熟悉的模块。</p>
+<ul>
+<li>内建模块<ul>
+<li>nodejs是由c++编写的。核心的处理逻辑，都是c++语言开发的，这些模块官方称为build-in模块；</li>
+<li>代码放置在/src目录下。</li>
+<li>举例：node.cc, node_file.cc, node_buffer.cc等</li>
+</ul>
+</li>
+<li>原生模块<ul>
+<li>由于nodejs是给js开发者写的，因此又封装了一层js模块给js开发者使用，这部分模块官方称为native模块（相对于js开发者自己写的逻辑模块而言）；</li>
+<li>代码放置在/lib目录下。</li>
+<li>举例：net.js, http.js, fs.js, util.js等</li>
+</ul>
+</li>
+</ul>
+<p>net模块，即/lib/net.js, 就是native模块，是由js语言开发的。</p>
 <h3 id="net如何创建一个服务？">net如何创建一个服务？</h3>
+<p>net常用的创建服务如下：</p>
+<pre><code class="language-js">const server = net.createServer(connectionListener);</code></pre>
+<p>在/lib/net.js中，net.createServer代码如下：</p>
+<pre><code class="language-js">function createServer(options, connectionListener) {
+  return new Server(options, connectionListener);
+}</code></pre>
+<p>可见，createServer是初始化了一个Server的实例。</p>
+<p>Server这里是一个构建函数，里面的代码大概50行，但核心主要做了两件事：</p>
+<ul>
+<li>继承EventEmitter的方法和属性。</li>
+<li>把创建服务时传入的回调函数connectionListener注册监听一下。this.on(&#39;connection&#39;, connectionListener);</li>
+</ul>
+<p>这样，一旦有请求事件过来，则执行connectionListener。</p>
+<p>那么此时你一定会想知道，请求事件是怎么过来的呢？</p>
+<p>接下来我们就来详细分析一下。</p>
 
 <script src="https://utteranc.es/client.js"
         repo="coderweek/coderweek.github.io"

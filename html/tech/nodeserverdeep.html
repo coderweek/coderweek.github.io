@@ -106,13 +106,9 @@ const server = net.createServer(connectionListener);</code></pre>
 <li>绑定一个ip地址，即bind();</li>
 <li>监听端口，即listen();</li>
 </ul>
-<p>net.js模块也就是干了这些事情；只不过它把所有这些过程都放在了listen方法中。</p>
-<pre><code class="language-js">// 很简单，只是初始化一个Server,并不涉及底层socket调用
-const server = net.createServer(connectionListener);
-// listen是主角，它做了所有的事情，包括创建socket, 调用底层bind,listen等
-server.listen(9090);</code></pre>
-<p>那么我们就来分析一下listen。</p>
-<h4 id="net模块中listen干了啥？">net模块中listen干了啥？</h4>
+<p>net.js模块也就是干了这些事情；只不过它把所有这些过程都放在了net.js的listen方法中。
+那么我们就来分析一下listen。</p>
+<h4 id="net模块中listen第一步：首先创建一个tcp服务">net模块中listen第一步：首先创建一个tcp服务</h4>
 <p>抽丝剥茧，listen最终调用了new TCP方法，即build-in模块tcp_wrap.cc模块中的void TCPWrap::New方法。</p>
 <pre><code class="language-js">// lib/net.js中createServerHandle函数，大概1218行。
 handle = new TCP(TCPConstants.SERVER);</code></pre>
@@ -124,19 +120,121 @@ handle = new TCP(TCPConstants.SERVER);</code></pre>
 new TCPWrap(env, args.This(), provider);</code></pre>
 <p>new TCPWrap则调用了libuv的uv_tcp_init</p>
 <pre><code class="language-js">int r = uv_tcp_init(env-&gt;event_loop(), &amp;handle_);</code></pre>
-<p>至此，工作转交给libuv。下面我们来看libuv做了啥。</p>
-<h4 id="libuv在服务启动时承担什么角色">libuv在服务启动时承担什么角色</h4>
+<p>uv_tcp_init是libuv的一个方法。</p>
 <p>libuv是一个异步I/O的多平台支持库。当初主要是为了 Node.js而诞生；但它也被用在 Luvit 、 Julia 、 pyuv 和 其他项目 。</p>
 <p>libuv全局管理一个handle，即loop，所有的异步处理对象，都会挂载到loop下，以方便需要时，直接从loop下查找。</p>
-<p>上一节中，net调用tcp_wrap，最终调用uv_tcp_init，就是挂载一些东西到loop下。接下来，我们一步一步分析。</p>
-<p>首先uv_tcp_init</p>
+<p>我们看看uv_tcp_init做了啥：</p>
 <pre><code class="language-js">// 第一个参数，env-&gt;event_loop()即使loop对象；
 // 第二个参数 &amp;handle是全局唯一的服务对象，是一个uv_tcp_t实例
 int r = uv_tcp_init(env-&gt;event_loop(), &amp;handle_)</code></pre>
-<p>uv_tcp_init最终调用了uv_tcp_init_ex。</p>
-<pre><code class="language-js">// 位于/src/deps/uv/src/unix 114行
-</code></pre>
+<p>uv_tcp_init最终调用了uv_tcp_init_ex(位于/src/deps/uv/src/unix/tcp.c 114行)。</p>
+<pre><code class="language-js">// 由于tcp是基于stream实现的，因此这里先进行初始化
+// 位于/src/deps/uv/src/unix/tcp.c 125行
+uv__stream_init(loop, (uv_stream_t*)tcp, UV_TCP);</code></pre>
+<p>uv__stream_init做了啥呢？他先把steam挂载到loop下，然后执行一系列的初始化操作，最终将stream下的观察者进行初始化</p>
+<pre><code class="language-js">// 以下代码片段，从/src/deps/uv/src/unix/stream.c 85行开始
+// 把stream挂载到loop下
+uv__handle_init(loop, (uv_handle_t*)stream, type);
+
+// 把stream下的一些属性进行初始化赋值
+...
+
+// 初始化stream下的观察者
+uv__io_init(&amp;stream-&gt;io_watcher, uv__stream_io, -1);</code></pre>
+<p>至此，libuv把初始化操作都做完了。总结一下初始化做了哪些事情：</p>
+<ul>
+<li>把服务对象（tcp服务，也就是stream）挂载到loop下。</li>
+<li>然后对stream执行一系列的初始化操作。</li>
+</ul>
+<h4 id="net模块中listen第二步：接着调用libuv的bind">net模块中listen第二步：接着调用libuv的bind</h4>
+<p>这里很简单，不做展开</p>
+<h4 id="net模块中listen第三步：最后调用libuv的listen">net模块中listen第三步：最后调用libuv的listen</h4>
+<p>libuv的listen做了很多事情：</p>
+<ul>
+<li>首先调用底层的listen</li>
+<li>然后调用uv__io_start，把前面创建的stream的io观察者，放到loop的watcher_queue中</li>
+</ul>
+<p>至此，nodejs服务启动阶段完成。接下来，我们分析有客户端请求到来时，nodejs服务是如何处理的。</p>
 <h3 id="net模块处理请求过程">net模块处理请求过程</h3>
+<p>nodejs使用C++开发的。因此nodejs服务，就是一个C++的进程在跑。</p>
+<p>这个进程中，只有一个线程。</p>
+<p>我们来看下，这个线程都在跑什么代码逻辑。</p>
+<ul>
+<li>node_main.cc入口处，调用node.cc中的Start</li>
+<li>node.cc中的Start，初始化一个main_instance，然后调用main_instance.Run()</li>
+<li>node_main_instance.cc中，Run开启一个无限循环，不断调用uv_run();</li>
+</ul>
+<p>（当然实际代码逻辑远远超过这些，感兴趣的同学可以自己看下源码。）</p>
+<p>可以看到，进程启动起来以后，在不断地调用uv_run，那么uv_run是干啥呢？</p>
+<pre><code class="language-js">// 位于/src/deps/uv/src/unix/core.c
+int uv_run(uv_loop_t* loop, uv_run_mode mode) {
+  int timeout;
+  int r;
+  int ran_pending;
+
+  r = uv__loop_alive(loop);
+  if (!r)
+    uv__update_time(loop);
+
+  while (r != 0 &amp;&amp; loop-&gt;stop_flag == 0) {
+    uv__update_time(loop);
+    uv__run_timers(loop);
+    ran_pending = uv__run_pending(loop);
+    uv__run_idle(loop);
+    uv__run_prepare(loop);
+
+    timeout = 0;
+    if ((mode == UV_RUN_ONCE &amp;&amp; !ran_pending) || mode == UV_RUN_DEFAULT)
+      timeout = uv_backend_timeout(loop);
+
+    uv__io_poll(loop, timeout);
+    uv__run_check(loop);
+    uv__run_closing_handles(loop);
+    ...
+  }
+  ...
+}</code></pre>
+<p>是不是很熟悉，其实就是libuv官网中的这张图
+<img src="../../img/uv_run.png" alt="alt 图片"></p>
+<p>我们重点关注uv__io_poll这个阶段，看看它到底是怎么判断【某个请求已经就绪，可以执行回调了】。</p>
+<h4 id="uv__io_poll做了啥？">uv__io_poll做了啥？</h4>
+<p>uv__io_poll封装了个个平台的差异性（linux下使用epoll， mac下使用kqueue...）。我们一linux的epoll为例。</p>
+<p>下面是简要步骤：</p>
+<ul>
+<li><p>uv__io_poll会从loop-&gt;watcher_queue中取出一个（上面我们有分析，node服务启动后，会把服务注册到这个队列中，参见“net模块中listen最后调用libuv的listen”）。</p>
+</li>
+<li><p>取出后，调用epoll的epoll_ctl方法，表示我对这个服务的句柄感兴趣，epoll你帮我盯着。</p>
+</li>
+<li><p>然后调用epoll的epoll_pwait方法（这里会阻塞一会），拿到已经准备就绪的事件。</p>
+</li>
+<li><p>最后调用每个服务的回调： w-&gt;cb(loop, w, pe-&gt;events)  （这里的w就是第一步中从watcher_queue中取出来的东西）</p>
+</li>
+</ul>
+<p>w-&gt;cb是什么呢？
+其实，它是在服务启动时，调用libuv的uv_tcp_listen时设置的。</p>
+<pre><code class="language-js">// 位于/src/deps/uv/src/unix/tcp.c 363行
+tcp-&gt;io_watcher.cb = uv__server_io;</code></pre>
+<p>uv__server_io是stream.c中的一个方法，主要做了以下这件事：</p>
+<pre><code class="language-js">// 位于/src/deps/uv/src/unix/stream.c 564行
+stream-&gt;connection_cb(stream, err);</code></pre>
+<p>而这个stream-&gt;connection_cb，就是业务开发人员，启动服务时，设定的connectionListener回调，证据：</p>
+<pre><code class="language-js">// 位于/src/deps/uv/src/unix/tcp.c 3359行
+// 这个connection_cb，和cb关联了起来。此处的cb，就是业务开发设定的connectionListener
+tcp-&gt;connection_cb = cb;</code></pre>
+<p>（注：stream-&gt;connection_cb的stream和tcp-&gt;connection_cb的tcp是一个东西）。</p>
+<p>到此，libuv的uv__io_poll完成了监听网络事件，并调用服务回调的过程。</p>
+<p>总结一下：</p>
+<ul>
+<li>把业务服务注册到epoll中。</li>
+<li>epoll监测到事件，然后调用业务开发指定的回调。</li>
+</ul>
+<h3 id="net模块如何处理高并发？">net模块如何处理高并发？</h3>
+<p>经过上面的分析，你可能大概了解了一个请求的整个处理过程。但是nodejs服务是可以处理高并发请求的，这又是怎么处理的呢？</p>
+<p>带着整个疑问，我们来一一分析。</p>
+<h2 id="定时器">定时器</h2>
+<p>敬请期待。。。</p>
+<h2 id="文件io">文件io</h2>
+<p>敬请期待。。。</p>
 </div>
 <script src="https://utteranc.es/client.js"
         repo="coderweek/coderweek.github.io"

@@ -285,4 +285,4 @@ tcp->connection_cb = cb;
 
 https://cloud.tencent.com/developer/article/1630793 （libuv）
 
-https://cloud.tencent.com/developer/article/1669236 (nodejs源码的研究)
+https://cloud.tencent.com/developer/article/1624497 (stream)

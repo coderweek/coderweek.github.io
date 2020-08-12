@@ -7,6 +7,7 @@ const html = marked(fs.readFileSync(source,'utf8'));
 let page = `
 <!DOCTYPE html>
 <head>
+<title>码农周刊</title>
 <link rel="stylesheet" href="../../style/common.css">`;
 if(process.argv[2] === 'tech'){
     page += `

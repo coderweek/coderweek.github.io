@@ -11,3 +11,9 @@ Hutt River，坐落于一个75平方公里的农场，由一位叫Leonard Casley
 目前由于新冠疫情影响，旅游下降，继承人不得不出售农场，以偿还债务。
 
 有趣的是，该国曾于1977年，因税收问题，向澳大利亚宣战。
+
+## 20世纪福克斯品牌将成为历史
+![alt 图片](../../img/20centuryfox.png)
+迪士尼从fox收购了“20th Century Fox”后，决定将其更名为“20th Century Studios”；同样更名的还有电视品牌“20th Century Fox Television”，被改名为“20th Television”。
+
+改名的原因是，迪士尼并没有把fox的所有品牌产品都收购，比如Fox Sports, Fox News等。为了避免市场和用户困扰，迪士尼决定把收购过来的品牌，去掉Fox字符。

@@ -8,6 +8,7 @@ let page = `
 <!DOCTYPE html>
 <head>
 <title>码农周刊</title>
+<link id="favicon" rel="icon" type="image/x-icon" href="../../img/favicon.ico">
 <link rel="stylesheet" href="../../style/common.css">`;
 if(process.argv[2] === 'tech'){
     page += `

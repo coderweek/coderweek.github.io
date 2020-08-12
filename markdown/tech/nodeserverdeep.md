@@ -280,3 +280,8 @@ tcp->connection_cb = cb;
 敬请期待。。。
 ## 文件io
 敬请期待。。。
+
+附录：
+https://cloud.tencent.com/developer/article/1630793 （libuv）
+
+https://cloud.tencent.com/developer/article/1669236 (nodejs源码的研究)

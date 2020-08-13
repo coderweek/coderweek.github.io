@@ -272,9 +272,59 @@ tcp->connection_cb = cb;
 
 ### net模块如何处理高并发？
 
-经过上面的分析，你可能大概了解了一个请求的整个处理过程。但是nodejs服务是可以处理高并发请求的，这又是怎么处理的呢？
+经过上面的分析，你可能大概了解了一个请求的整个处理过程。但是nodejs服务又是怎么处理高并发呢？
 
 带着整个疑问，我们来一一分析。
+
+我们先来设置一个场景：
+
+* 有个用户A,串行发送5个请求到服务器；几乎在同一时间点，另外一个用户B,串行发送10个请求到服务器。
+* 该服务器处理每个请求的时间需要20ms（假设）。
+
+此时服务器会收到15个请求（15 requests）;但是由于目前都是长连接，所以服务端其实只收到了两个连接（2 connections）。总结一下：
+* 2个connections
+* 15个requests（第一connection 5个，第二个connection10个）
+
+每个tcp connection到来时，都会根据请求包中的目标ip和端口，找到对应的socket；然后完成三次握手，最后进入该socket下的accept_queue队列中。
+
+那么此时我们的nodejs服务对应的socket的accept_queue中，就会有两个connection。
+
+此时libuv运行uv__io_poll, 最终调用epoll_wait。由于此socket中有连接到来，因此epoll_wait返回的一批fds中，就包含我们服务socket的fd。
+
+接着，我们对此fd，执行它的回调（w->cb）。
+
+这个回调，也即是stream.c中的uv__server_io中，它会执行一个while循环，一直调用accept()，拿到所有的连接（此样例中，就是拿到用户A和B的两个连接），直到accept()返回-1（表示accept_queue中没有啦）。
+
+在这个循环中，每拿到一个连接，便执行业务开发设置的回调函数connectionListener。
+
+比如，我们先拿到了用户A的连接，然后执行connectionListener();
+回忆一下connectionListener干了啥
+```js
+// connectionListener就是net.createServer的那个函数参数
+const server = net.createServer((c) => {
+  // 'connection' listener.
+  console.log('client connected');
+  c.on('end', () => {
+    console.log('end');
+  });
+  c.on('data', () => {
+      console.log('data event');
+      c.write('HTTP/1.1 200 OK\r\n');
+        c.write('Connection: keep-alive\r\n');
+        c.write('Content-Length: 12\r\n');
+        c.write('\r\n');
+        c.write('hello world!');
+  })
+});
+```
+
+样例代码中的c，就是用户A发起的那个tcp连接。虽然用户A发起了5个请求，但是都是共用这一个tcp连接。
+
+因此：
+* console.log('client connected');  会执行一次。
+* console.log('data event'); 会执行5次。
+
+那么你会问，c.on('data')是在一个tcp连接上接受数据，我怎么区分5个请求的边界呢？这就交给你来处理了（nodejs的http模块已经帮大家处理了，直接拿来用就行）。
 
 ## 定时器
 敬请期待。。。

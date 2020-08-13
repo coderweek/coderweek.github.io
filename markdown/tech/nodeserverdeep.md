@@ -25,7 +25,9 @@ server.listen(port, hostname, () => {
 ```
 这里使用了nodejs原生模块http来启动一个服务；
 
-实际上，http模块是调用了nodejs的另外一个原生模块net。那么net启动一个服务，是什么样子呢？我们看下直接使用net启动一个服务的样例：
+实际上，http模块是调用了nodejs的另外一个原生模块net。
+
+那么net启动一个服务，是什么样子呢？我们看下直接使用net启动一个服务的样例：
 
 ```js
 // 1.引入net
@@ -62,7 +64,7 @@ server.listen(9090, () => {
   
 如果有请求到来，则执行第2步中设置的回调函数。
 
-所以，一个普通的nodejs服务，实际上是由net模块来事先的。
+所以，一个普通的nodejs服务，实际上是由net模块来实现的。
 
 接下来我们就看下net模块的主要功能，以及它是如何启动，并处理客户端请求的。
 
@@ -80,7 +82,7 @@ server.listen(9090, () => {
 net模块，即/lib/net.js, 就是原生模块，也叫native模块；是由js语言开发的。
 
 ### net模块如何创建一个服务？
-net常用的创建服务如下：
+还是刚才的样例：
 ```js
 // connectionListener就是一个普通的回调函数，负责处理业务逻辑。
 const server = net.createServer(connectionListener);
@@ -186,7 +188,7 @@ nodejs使用C++开发的。因此nodejs服务，就是一个C++的进程在跑�
 
 我们来看下，这个线程都在跑什么代码逻辑。
 
-* node_main.cc入口处，调用node.cc中的Start
+* （node_main.cc入口处）调用node.cc中的Start
 * node.cc中的Start，初始化一个main_instance，然后调用main_instance.Run()
 * node_main_instance.cc中，Run开启一个无限循环，不断调用uv_run();
 
@@ -231,12 +233,12 @@ int uv_run(uv_loop_t* loop, uv_run_mode mode) {
 我们重点关注uv__io_poll这个阶段，看看它到底是怎么判断【某个请求已经就绪，可以执行回调了】。
 
 #### uv__io_poll做了啥？
-uv__io_poll封装了个个平台的差异性（linux下使用epoll， mac下使用kqueue...）。我们一linux的epoll为例。
+uv__io_poll封装了个个平台的差异性（linux下使用epoll， mac下使用kqueue...）。我们以linux的epoll为例。
 
 下面是简要步骤：
-* uv__io_poll会从loop->watcher_queue中取出一个（上面我们有分析，node服务启动后，会把服务注册到这个队列中，参见“net模块中listen最后调用libuv的listen”）。
+* uv__io_poll会从loop->watcher_queue中取出一个（上面我们有分析，node服务启动后，会把服务注册到这个队列中，参见“net模块中listen第三步：最后调用libuv的listen”）。
 
-* 取出后，调用epoll的epoll_ctl方法，表示我对这个服务的句柄感兴趣，epoll你帮我盯着。
+* 取出后，调用epoll的epoll_ctl方法，表示我对这个服务的句柄感兴趣，告诉epoll：你帮我盯着。
 
 * 然后调用epoll的epoll_pwait方法（这里会阻塞一会），拿到已经准备就绪的事件。
 

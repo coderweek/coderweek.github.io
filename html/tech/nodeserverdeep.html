@@ -32,7 +32,7 @@ server.listen(port, hostname, () =&gt; {
   console.log(`Server running at http://${hostname}:${port}/`);
 });</code></pre>
 <p>这里使用了nodejs原生模块http来启动一个服务；</p>
-<p>实际上，http模块是调用了nodejs的另外一个原生模块net。</p>
+<p>实际上，http模块是依赖于nodejs的另外一个原生模块net。</p>
 <p>那么net启动一个服务，是什么样子呢？我们看下直接使用net启动一个服务的样例：</p>
 <pre><code class="language-js">// 1.引入net
 const net = require(&#39;net&#39;);
@@ -253,6 +253,7 @@ tcp-&gt;connection_cb = cb;</code></pre>
 <p>比如，我们先拿到了用户A的连接，然后执行connectionListener();
 回忆一下connectionListener干了啥</p>
 <pre><code class="language-js">// connectionListener就是net.createServer的那个函数参数
+// 这里的c就是clientSocket，即一个client tcp connection
 const server = net.createServer((c) =&gt; {
   // &#39;connection&#39; listener.
   console.log(&#39;client connected&#39;);
@@ -274,7 +275,140 @@ const server = net.createServer((c) =&gt; {
 <li>console.log(&#39;client connected&#39;);  会执行一次。</li>
 <li>console.log(&#39;data event&#39;); 会执行5次。</li>
 </ul>
-<p>那么你会问，c.on(&#39;data&#39;)是在一个tcp连接上接受数据，我怎么区分5个请求的边界呢？这就交给你来处理了（nodejs的http模块已经帮大家处理了，直接拿来用就行）。</p>
+<p>那么你会问，c.on(&#39;data&#39;)是怎么拿到数据的呢？这个客户端连接有数据时，是怎么触发这个data事件呢？</p>
+<h3 id="net模块拿到客户端连接后，怎么处理？">net模块拿到客户端连接后，怎么处理？</h3>
+<p>上一节中，我们分析了一个服务如何拿到客户端的连接。拿到了客户端连接，并不一定表示马上有数据。客户端可能只是先发起一个连接，但是隔了10ms~1分钟，才发送真正的数据。</p>
+<p>由于10ms~1分钟，甚至更久，这个时间是不确定的。服务又不能干等着，因此必须把这个client connection也交给libuv（最终交给epoll）来盯着。</p>
+<p>我们来看看代码，详细分析。</p>
+<h4 id="客户端连接封装">客户端连接封装</h4>
+<p>服务收到客户端连接时，会最终调用net.js中的onconnection。</p>
+<pre><code class="language-js">const socket = new Socket({
+  handle: clientHandle,
+  allowHalfOpen: self.allowHalfOpen,
+  pauseOnCreate: self.pauseOnConnect,
+  readable: true,
+  writable: true
+});
+
+self._connections++;
+socket.server = self;
+socket._server = self;
+
+DTRACE_NET_SERVER_CONNECTION(socket);
+// 事先创建服务时，有注册一个on(&#39;connection&#39;)，这里触发
+self.emit(&#39;connection&#39;, socket);</code></pre>
+<p>可见，这个客户端连接，就是封装了一个Socket。</p>
+<p>net.js中的Socket集成了EventEmiter, 业务代码中的on(&#39;data&#39;)就是由此而来。</p>
+<pre><code class="language-js">// 这里的c，就是socket = new Socket()
+const server = net.createServer((c) =&gt; {
+  ...
+  c.on(&#39;data&#39;, () =&gt; {
+    ...
+  })
+});</code></pre>
+<p>我们知道EventEmiter比较简单，通过on注册事件，然后通过emit触发事件。那么可以断定，在某个时候，触发了emit(&#39;data&#39;, clientData)。</p>
+<p>什么时候，在什么地方，由谁触发的emit(&#39;data&#39;, clientData)呢？</p>
+<p>我们继续分析。</p>
+<h4 id="将客户端连接注册到epoll中">将客户端连接注册到epoll中</h4>
+<p>客户端连接是通过</p>
+<pre><code class="language-js">// clientHandle就是相对底层的客户端tcp connection。
+const socket = new Socket({
+  handle: clientHandle,
+  allowHalfOpen: self.allowHalfOpen,
+  pauseOnCreate: self.pauseOnConnect,
+  readable: true,
+  writable: true
+});</code></pre>
+<p>创建的。</p>
+<p>在Socket初始化的时候，又调用一个read,不过指明读取0个长度</p>
+<pre><code class="language-js">// options.handle就是clientHandle
+// 赋值给socket下的_handle，以备后用
+function Socket(options) {
+  this._handle = options.handle;
+  ...
+  // 接着调用read
+  this.read(0);
+}</code></pre>
+<p>由于socket集成了Stream，因此这里的read是Stream下的一个方法；由于是读取，因此我们去/lib/_stream_readable.js中找到read方法。</p>
+<pre><code class="language-js">Readable.prototype.read = function(n) {
+  ...
+  // Call internal read method
+  this._read(state.highWaterMark);
+}</code></pre>
+<p>而这个this._read就是net.js中Socket下的一个方法</p>
+<pre><code class="language-js">Socket.prototype._read = function(n) {
+  debug(&#39;_read&#39;);
+
+  if (this.connecting || !this._handle) {
+    debug(&#39;_read wait for connection&#39;);
+    this.once(&#39;connect&#39;, () =&gt; this._read(n));
+  } else if (!this._handle.reading) {
+    tryReadStart(this);
+  }
+};</code></pre>
+<p>它调用了tryReadStart(同样位于net.js中)</p>
+<pre><code class="language-js">function tryReadStart(socket) {
+  // Not already reading, start the flow
+  debug(&#39;Socket._handle.readStart&#39;);
+  socket._handle.reading = true;
+  const err = socket._handle.readStart();
+  if (err)
+    socket.destroy(errnoException(err, &#39;read&#39;));
+}</code></pre>
+<p>可以看到，它最终调用了socket._handle.readStart()。这个socket._handle就是Socket初始化时，保存的客户端clientHandle。</p>
+<p>那么socket._handle.readStart方法是什么呢？它位于/src/stream_wrap.cc中:</p>
+<pre><code class="language-js">int LibuvStreamWrap::ReadStart() {
+  return uv_read_start(stream(), [](uv_handle_t* handle,
+                                    size_t suggested_size,
+                                    uv_buf_t* buf) {
+    static_cast&lt;LibuvStreamWrap*&gt;(handle-&gt;data)-&gt;OnUvAlloc(suggested_size, buf);
+  }, [](uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf) {
+    static_cast&lt;LibuvStreamWrap*&gt;(stream-&gt;data)-&gt;OnUvRead(nread, buf);
+  });
+}</code></pre>
+<p>可以看到，它调用了uv_read_start。</p>
+<p>uv_read_start源码（/src/deps/uv/src/unix/stream.c中）：</p>
+<pre><code class="language-js">// 这里的stream，其实就是clientHandle。
+int uv_read_start(uv_stream_t* stream,
+                  uv_alloc_cb alloc_cb,
+                  uv_read_cb read_cb) {
+  ...
+  uv__io_start(stream-&gt;loop, &amp;stream-&gt;io_watcher, POLLIN);
+  ...
+}</code></pre>
+<p>uv__io_start我们就比较清晰了，它就是把clientHandle的io_watcher挂载到loop下的watcher_queue中，以便在uv__io_poll阶段，被epoll关注。</p>
+<p>到此为止，客户端连接clientHandle算是成功注册到epoll啦。</p>
+<h4 id="epoll怎么触发emitdata">epoll怎么触发emit(&#39;data&#39;)?</h4>
+<p>我们知道，在uv__io_poll阶段，epoll_wait拿到有事件的fd后，调用了w-&gt;cb(loop, w, pe-&gt;events);</p>
+<p>这个w-&gt;cb我们重点关注一下。</p>
+<ul>
+<li>一个普通的stream，w-&gt;cb是指cb，就是指uv__stream_io；</li>
+<li>如果是服务端的fd，就会调用listen。uv_tcp_listen会用uv__server_io覆盖w-&gt;cb。</li>
+</ul>
+<p>因为我们是拿到了客户端，所以此处的w-&gt;cb没有被覆盖，还是v__stream_io。</p>
+<p>我们看看v__stream_io干啦啥？</p>
+<pre><code class="language-js">static void uv__stream_io(uv_loop_t* loop, uv__io_t* w, unsigned int events) {
+  ...
+  if (events &amp; (POLLIN | POLLERR | POLLHUP))
+    uv__read(stream);
+  ...
+}</code></pre>
+<p>它调用了uv__read, uv__read会调用read_cb。</p>
+<pre><code class="language-js">static void uv__read(uv_stream_t* stream) {
+  ...
+  stream-&gt;read_cb(stream, UV_ENOBUFS, &amp;buf);
+  ...</code></pre>
+<p>read_cb最终会调用self.push(buffer);</p>
+<p>self.push就是/lib/_stream_readable.js中的方法：</p>
+<pre><code class="language-js">Readable.prototype.push = function(chunk, encoding) {
+  return readableAddChunk(this, chunk, encoding, false);
+};</code></pre>
+<p>readableAddChunk方法会调用addChunk();最终触发emit(&#39;data&#39;);</p>
+<pre><code class="language-js">function addChunk(stream, state, chunk, addToFront) {
+    ...
+    stream.emit(&#39;data&#39;, chunk);
+    ...</code></pre>
+<p>到此，on(&#39;data&#39;,cb)中注册的回调cb得以执行，业务js逻辑开始接手。</p>
 <h2 id="定时器">定时器</h2>
 <p>敬请期待。。。</p>
 <h2 id="文件io">文件io</h2>

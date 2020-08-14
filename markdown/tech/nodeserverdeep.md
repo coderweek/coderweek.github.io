@@ -25,7 +25,7 @@ server.listen(port, hostname, () => {
 ```
 这里使用了nodejs原生模块http来启动一个服务；
 
-实际上，http模块是调用了nodejs的另外一个原生模块net。
+实际上，http模块是依赖于nodejs的另外一个原生模块net。
 
 那么net启动一个服务，是什么样子呢？我们看下直接使用net启动一个服务的样例：
 
@@ -303,6 +303,7 @@ tcp->connection_cb = cb;
 回忆一下connectionListener干了啥
 ```js
 // connectionListener就是net.createServer的那个函数参数
+// 这里的c就是clientSocket，即一个client tcp connection
 const server = net.createServer((c) => {
   // 'connection' listener.
   console.log('client connected');
@@ -326,7 +327,201 @@ const server = net.createServer((c) => {
 * console.log('client connected');  会执行一次。
 * console.log('data event'); 会执行5次。
 
-那么你会问，c.on('data')是在一个tcp连接上接受数据，我怎么区分5个请求的边界呢？这就交给你来处理了（nodejs的http模块已经帮大家处理了，直接拿来用就行）。
+那么你会问，c.on('data')是怎么拿到数据的呢？这个客户端连接有数据时，是怎么触发这个data事件呢？
+
+### net模块拿到客户端连接后，怎么处理？
+上一节中，我们分析了一个服务如何拿到客户端的连接。拿到了客户端连接，并不一定表示马上有数据。客户端可能只是先发起一个连接，但是隔了10ms~1分钟，才发送真正的数据。
+
+由于10ms~1分钟，甚至更久，这个时间是不确定的。服务又不能干等着，因此必须把这个client connection也交给libuv（最终交给epoll）来盯着。
+
+我们来看看代码，详细分析。
+
+#### 客户端连接封装
+服务收到客户端连接时，会最终调用net.js中的onconnection。
+```js
+const socket = new Socket({
+  handle: clientHandle,
+  allowHalfOpen: self.allowHalfOpen,
+  pauseOnCreate: self.pauseOnConnect,
+  readable: true,
+  writable: true
+});
+
+self._connections++;
+socket.server = self;
+socket._server = self;
+
+DTRACE_NET_SERVER_CONNECTION(socket);
+// 事先创建服务时，有注册一个on('connection')，这里触发
+self.emit('connection', socket);
+```
+可见，这个客户端连接，就是封装了一个Socket。
+
+net.js中的Socket集成了EventEmiter, 业务代码中的on('data')就是由此而来。
+
+```js
+// 这里的c，就是socket = new Socket()
+const server = net.createServer((c) => {
+  ...
+  c.on('data', () => {
+    ...
+  })
+});
+```
+
+我们知道EventEmiter比较简单，通过on注册事件，然后通过emit触发事件。那么可以断定，在某个时候，触发了emit('data', clientData)。
+
+什么时候，在什么地方，由谁触发的emit('data', clientData)呢？
+
+我们继续分析。
+
+#### 将客户端连接注册到epoll中
+客户端连接是通过
+```js
+// clientHandle就是相对底层的客户端tcp connection。
+const socket = new Socket({
+  handle: clientHandle,
+  allowHalfOpen: self.allowHalfOpen,
+  pauseOnCreate: self.pauseOnConnect,
+  readable: true,
+  writable: true
+});
+  ```
+创建的。
+
+在Socket初始化的时候，又调用一个read,不过指明读取0个长度
+```js
+// options.handle就是clientHandle
+// 赋值给socket下的_handle，以备后用
+function Socket(options) {
+  this._handle = options.handle;
+  ...
+  // 接着调用read
+  this.read(0);
+}
+  ```
+
+由于socket集成了Stream，因此这里的read是Stream下的一个方法；由于是读取，因此我们去/lib/_stream_readable.js中找到read方法。
+
+```js
+Readable.prototype.read = function(n) {
+  ...
+  // Call internal read method
+  this._read(state.highWaterMark);
+}
+```
+而这个this._read就是net.js中Socket下的一个方法
+
+```js
+Socket.prototype._read = function(n) {
+  debug('_read');
+
+  if (this.connecting || !this._handle) {
+    debug('_read wait for connection');
+    this.once('connect', () => this._read(n));
+  } else if (!this._handle.reading) {
+    tryReadStart(this);
+  }
+};
+```
+
+它调用了tryReadStart(同样位于net.js中)
+
+```js
+function tryReadStart(socket) {
+  // Not already reading, start the flow
+  debug('Socket._handle.readStart');
+  socket._handle.reading = true;
+  const err = socket._handle.readStart();
+  if (err)
+    socket.destroy(errnoException(err, 'read'));
+}
+```
+可以看到，它最终调用了socket._handle.readStart()。这个socket._handle就是Socket初始化时，保存的客户端clientHandle。
+
+那么socket._handle.readStart方法是什么呢？它位于/src/stream_wrap.cc中:
+
+```js
+int LibuvStreamWrap::ReadStart() {
+  return uv_read_start(stream(), [](uv_handle_t* handle,
+                                    size_t suggested_size,
+                                    uv_buf_t* buf) {
+    static_cast<LibuvStreamWrap*>(handle->data)->OnUvAlloc(suggested_size, buf);
+  }, [](uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf) {
+    static_cast<LibuvStreamWrap*>(stream->data)->OnUvRead(nread, buf);
+  });
+}
+```
+
+可以看到，它调用了uv_read_start。
+
+uv_read_start源码（/src/deps/uv/src/unix/stream.c中）：
+```js
+// 这里的stream，其实就是clientHandle。
+int uv_read_start(uv_stream_t* stream,
+                  uv_alloc_cb alloc_cb,
+                  uv_read_cb read_cb) {
+  ...
+  uv__io_start(stream->loop, &stream->io_watcher, POLLIN);
+  ...
+}
+```
+uv__io_start我们就比较清晰了，它就是把clientHandle的io_watcher挂载到loop下的watcher_queue中，以便在uv__io_poll阶段，被epoll关注。
+
+到此为止，客户端连接clientHandle算是成功注册到epoll啦。
+
+#### epoll怎么触发emit('data')?
+
+我们知道，在uv__io_poll阶段，epoll_wait拿到有事件的fd后，调用了w->cb(loop, w, pe->events);
+
+这个w->cb我们重点关注一下。
+
+* 一个普通的stream，w->cb是指cb，就是指uv__stream_io；
+* 如果是服务端的fd，就会调用listen。uv_tcp_listen会用uv__server_io覆盖w->cb。
+
+因为我们是拿到了客户端，所以此处的w->cb没有被覆盖，还是v__stream_io。
+
+我们看看v__stream_io干啦啥？
+
+```js
+static void uv__stream_io(uv_loop_t* loop, uv__io_t* w, unsigned int events) {
+  ...
+  if (events & (POLLIN | POLLERR | POLLHUP))
+    uv__read(stream);
+  ...
+}
+```
+它调用了uv__read, uv__read会调用read_cb。
+
+```js
+static void uv__read(uv_stream_t* stream) {
+  ...
+  stream->read_cb(stream, UV_ENOBUFS, &buf);
+  ...
+```
+
+read_cb最终会调用self.push(buffer);
+
+self.push就是/lib/_stream_readable.js中的方法：
+
+```js
+Readable.prototype.push = function(chunk, encoding) {
+  return readableAddChunk(this, chunk, encoding, false);
+};
+```
+readableAddChunk方法会调用addChunk();最终触发emit('data');
+
+```js
+function addChunk(stream, state, chunk, addToFront) {
+    ...
+    stream.emit('data', chunk);
+    ...
+```
+
+到此，on('data',cb)中注册的回调cb得以执行，业务js逻辑开始接手。
+
+
+
 
 ## 定时器
 敬请期待。。。

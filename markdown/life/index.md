@@ -47,3 +47,8 @@ Hutt River，坐落于一个75平方公里的农场，由一位叫Leonard Casley
 船沉入海面以下后， Edward Sheean仍然在射击；许多船员回忆，子弹从水面下Sheean的机炮中射出来，最终击落两架敌机。
 
 澳大利亚国内曾于1942-43, 2013，2019年四次提议，给Edward Sheean颁发勋章；直到今天，才最终授予。
+
+## 爱尔兰岛屿招募看守员
+![alt 图片](../../img/blasketisland.png)
+
+每年夏天，位于爱尔兰西部海岸的Great Blasket岛，会招募俩人（夫妻或朋友）来照看岛上的咖啡店和酒店。申请者大约有5万人，今年一对叫Annie Birney和Eoin Boyle的夫妻胜出。

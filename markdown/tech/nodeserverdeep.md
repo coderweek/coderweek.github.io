@@ -357,7 +357,7 @@ self.emit('connection', socket);
 ```
 可见，这个客户端连接，就是封装了一个Socket。
 
-net.js中的Socket集成了EventEmiter, 业务代码中的on('data')就是由此而来。
+net.js中的Socket继承了EventEmiter, 业务代码中的on('data')就是由此而来。
 
 ```js
 // 这里的c，就是socket = new Socket()
@@ -401,7 +401,7 @@ function Socket(options) {
 }
   ```
 
-由于socket集成了Stream，因此这里的read是Stream下的一个方法；由于是读取，因此我们去/lib/_stream_readable.js中找到read方法。
+由于socket继承了Stream，因此这里的read是Stream下的一个方法；由于是读取，因此我们去/lib/_stream_readable.js中找到read方法。
 
 ```js
 Readable.prototype.read = function(n) {

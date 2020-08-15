@@ -298,7 +298,7 @@ DTRACE_NET_SERVER_CONNECTION(socket);
 // 事先创建服务时，有注册一个on(&#39;connection&#39;)，这里触发
 self.emit(&#39;connection&#39;, socket);</code></pre>
 <p>可见，这个客户端连接，就是封装了一个Socket。</p>
-<p>net.js中的Socket集成了EventEmiter, 业务代码中的on(&#39;data&#39;)就是由此而来。</p>
+<p>net.js中的Socket继承了EventEmiter, 业务代码中的on(&#39;data&#39;)就是由此而来。</p>
 <pre><code class="language-js">// 这里的c，就是socket = new Socket()
 const server = net.createServer((c) =&gt; {
   ...
@@ -329,7 +329,7 @@ function Socket(options) {
   // 接着调用read
   this.read(0);
 }</code></pre>
-<p>由于socket集成了Stream，因此这里的read是Stream下的一个方法；由于是读取，因此我们去/lib/_stream_readable.js中找到read方法。</p>
+<p>由于socket继承了Stream，因此这里的read是Stream下的一个方法；由于是读取，因此我们去/lib/_stream_readable.js中找到read方法。</p>
 <pre><code class="language-js">Readable.prototype.read = function(n) {
   ...
   // Call internal read method

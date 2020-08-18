@@ -1,0 +1,119 @@
+
+<!DOCTYPE html>
+<head>
+<title>码农周刊</title>
+<link id="favicon" rel="icon" type="image/x-icon" href="../../img/favicon.ico">
+<link rel="stylesheet" href="../../style/common.css">
+<link rel="stylesheet" href="../../style/monokai/monokai.min.css">
+<link rel="stylesheet" href="../../style/tech/index.css">
+<script src="../../lib/highlightjs/highlight.min.js"></script>
+
+</head>
+<body>
+<div class = "pageContainer">
+<h1 id="nodejs-core调试">nodejs core调试</h1>
+<p>声明，本文特指使用vscode,调试nodejs native模块，比如/src/connection_wrap.cc代码。业务js代码调试，可参见nodejs官网调试。</p>
+<h2 id="step1下载nodejs源码安装包">step1,下载nodejs源码安装包</h2>
+<p>打开github上的仓库（<a href="https://github.com/nodejs/node%EF%BC%89%EF%BC%8C%E5%85%8B%E9%9A%86%E5%88%B0%E6%9C%AC%E5%9C%B0">https://github.com/nodejs/node），克隆到本地</a></p>
+<pre><code class="language-js">git clone https://github.com/nodejs/node.git</code></pre>
+<h2 id="step2-编译nodejs">step2, 编译nodejs</h2>
+<p>本文以macos为例。</p>
+<p>编译前需要安装：（详见<a href="https://github.com/nodejs/node/blob/master/BUILDING.md">build工具</a>）</p>
+<ul>
+<li>Xcode Command Line Tools &gt;= 10 for macOS</li>
+<li>Python (see note above)<ul>
+<li>Python 2.7</li>
+<li>Python 3.5, 3.6, 3.7, and 3.8.</li>
+</ul>
+</li>
+</ul>
+<p>在刚才clone的node路径下，执行以下两个命令（耗时较长，大概需要10-30分钟）。</p>
+<ul>
+<li>./configure</li>
+<li>make -j4</li>
+</ul>
+<p>编译好后，会在当前目录下，新增一个out目录，编译后的node存放在out/Release/node。</p>
+<h2 id="step3-验证编译">step3, 验证编译</h2>
+<p>在当前目录下，执行一下命令</p>
+<pre><code class="language-js">out/Release/node -v</code></pre>
+<p>如果能正确显示node的版本，那么证明nodejs编译成功。</p>
+<h2 id="step4-开始调试">step4, 开始调试</h2>
+<p>用vscode打开刚才的node目录, 添加launch.json文件。方式如下：
+<img src="../../img/addLaunchjson.png" alt="alt 图片"></p>
+<p>vscode会在当前目录下，生成一个launch.json文件。
+<img src="../../img/launchjson.png" alt="alt 图片"></p>
+<p>打开该文件，按照以下格式填写</p>
+<pre><code class="language-js">{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    &quot;version&quot;: &quot;0.2.0&quot;,
+    &quot;configurations&quot;: [
+        {
+            &quot;name&quot;: &quot;(lldb) Launch&quot;,
+            &quot;type&quot;: &quot;lldb&quot;,
+            &quot;request&quot;: &quot;launch&quot;,
+            &quot;program&quot;: &quot;{workspace}/out/Release/node&quot;, // 请填写绝对路径
+            &quot;args&quot;: [
+              &quot;--expose-internals&quot;,
+              &quot;{workspace}/test.js&quot; // 建议填写绝对路径，告诉vscode启动文件
+            ],
+            &quot;stopAtEntry&quot;: false,
+            &quot;cwd&quot;: &quot;{workspace}/out/Release/&quot;, // 请填写绝对路径
+            &quot;environment&quot;: [],
+            &quot;externalConsole&quot;: true,
+            &quot;MIMode&quot;: &quot;lldb&quot;
+          }
+    ]
+}</code></pre>
+<p>然后新增一个test.js文件，用于调试，你可以直接用下面的内容：</p>
+<pre><code class="language-js">const net = require(&#39;net&#39;);
+// 2.创建一个服务
+const server = net.createServer((c) =&gt; {
+  // &#39;connection&#39; listener.
+  console.log(&#39;client connected&#39;);
+  c.on(&#39;end&#39;, () =&gt; {
+    console.log(&#39;end&#39;);
+  });
+  c.on(&#39;data&#39;, () =&gt; {
+      console.log(&#39;data event&#39;);
+      c.write(&#39;HTTP/1.1 200 OK\r\n&#39;);
+        c.write(&#39;Connection: keep-alive\r\n&#39;);
+        c.write(&#39;Content-Length: 12\r\n&#39;);
+        c.write(&#39;\r\n&#39;);
+        c.write(&#39;hello world!&#39;);
+  })
+});
+server.on(&#39;error&#39;, (err) =&gt; {
+  throw err;
+});
+// 3.监听端口
+server.listen(9090, () =&gt; {
+  console.log(&#39;server bound&#39;);
+});</code></pre>
+<p>一切准备就绪，点击vscode顶部的  “Debug-&gt;Start Debugging(F5)”, vscode自动启动debug面板。</p>
+<p>你可以在vscode中打开一个文件，比如connection_wrap.cc, 用鼠标加一个端点。</p>
+<p>然后用浏览器访问<a href="http://localhost:9090/">http://localhost:9090/</a>, vscode会自动将程序停止在端点处。</p>
+<p><img src="../../img/debug.png" alt="alt 图片"></p>
+</div>
+<script src="https://utteranc.es/client.js"
+        repo="coderweek/coderweek.github.io"
+        issue-term="pathname"
+        label="fromgithubpages"
+        theme="github-light"
+        crossorigin="anonymous"
+        async>
+</script>
+
+<script>
+    function highlightCode() {
+        var pres = document.querySelectorAll("pre>code");
+        for (var i = 0; i < pres.length; i++) {
+            hljs.highlightBlock(pres[i]);
+        }
+    }
+    highlightCode();
+</script>
+    
+</body>
+</html>

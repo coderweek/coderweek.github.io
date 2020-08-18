@@ -2,7 +2,7 @@
 声明，本文特指使用vscode,调试nodejs native模块，比如/src/connection_wrap.cc代码。业务js代码调试，可参见nodejs官网调试。
 
 ## step1,下载nodejs源码安装包
-打开github上的仓库（https://github.com/nodejs/node），克隆到本地
+打开github上的仓库（https://github.com/nodejs/node， 克隆到本地
 
 ```js
 git clone https://github.com/nodejs/node.git

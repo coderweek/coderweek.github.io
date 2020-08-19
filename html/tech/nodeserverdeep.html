@@ -385,7 +385,19 @@ int uv_read_start(uv_stream_t* stream,
 <li>一个普通的stream，w-&gt;cb是指cb，就是指uv__stream_io；</li>
 <li>如果是服务端的fd，就会调用listen。uv_tcp_listen会用uv__server_io覆盖w-&gt;cb。</li>
 </ul>
-<p>因为我们是拿到了客户端，所以此处的w-&gt;cb没有被覆盖，还是v__stream_io。</p>
+<p>我们来看下为什么一个普通的stream（非listen的socket），w-&gt;cb会是uv__stream_io.</p>
+<p>打断点调试发现：一个新客户端连接来了以后，会调用WrapType::Instantiate</p>
+<pre><code class="language-js">// 在/src/connection_wrap.cc
+void ConnectionWrap&lt;WrapType, UVType&gt;::OnConnection(uv_stream_t* handle,
+                                                    int status) {
+  ...
+  WrapType::Instantiate(env, wrap_data, WrapType::SOCKET)
+  ...
+}</code></pre>
+<p>WrapType::Instantiate会最终直接初始化一个stream，调用uv__stream_init。</p>
+<p>调用栈如下图所示：
+<img src="../../img/clientStreamInit.png" alt="alt 图片"></p>
+<p>所以此处的w-&gt;cb没有被覆盖，还是v__stream_io。</p>
 <p>我们看看v__stream_io干啦啥？</p>
 <pre><code class="language-js">static void uv__stream_io(uv_loop_t* loop, uv__io_t* w, unsigned int events) {
   ...

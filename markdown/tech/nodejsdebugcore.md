@@ -22,6 +22,8 @@ git clone https://github.com/nodejs/node.git
 * ./configure
 * make -j4
 
+注意：由于release版本中，包含了C++的调试信息，因此如果只是调试C++文件，不需要加--debug。
+
 编译好后，会在当前目录下，新增一个out目录，编译后的node存放在out/Release/node。
 
 ## step3, 验证编译

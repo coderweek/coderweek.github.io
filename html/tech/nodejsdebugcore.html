@@ -12,7 +12,9 @@
 <body>
 <div class = "pageContainer">
 <h1 id="nodejs-core调试">nodejs core调试</h1>
-<p>声明，本文特指使用vscode,调试nodejs native模块，比如/src/connection_wrap.cc代码。业务js代码调试，可参见nodejs官网调试。</p>
+<p>声明，本文特指使用vscode,调试nodejs native和build-in模块，比如/src/connection_wrap.cc，/lib/net.js代码。</p>
+<p>适用对象为：开发nodejs核心源码或者对其感兴趣的童鞋。</p>
+<p>业务js代码调试，可参见nodejs官网调试指南。</p>
 <h2 id="step1下载nodejs源码安装包">step1,下载nodejs源码安装包</h2>
 <p>打开github上的仓库（<a href="https://github.com/nodejs/node%EF%BC%8C">https://github.com/nodejs/node，</a> 克隆到本地</p>
 <pre><code class="language-js">git clone https://github.com/nodejs/node.git</code></pre>
@@ -61,9 +63,6 @@
             ],
             &quot;stopAtEntry&quot;: false,
             &quot;cwd&quot;: &quot;{workspace}/out/Release/&quot;, // 请填写绝对路径
-            &quot;environment&quot;: [],
-            &quot;externalConsole&quot;: true,
-            &quot;MIMode&quot;: &quot;lldb&quot;
           }
     ]
 }</code></pre>
@@ -96,6 +95,50 @@ server.listen(9090, () =&gt; {
 <p>你可以在vscode中打开一个文件，比如connection_wrap.cc, 用鼠标加一个端点。</p>
 <p>然后用浏览器访问<a href="http://localhost:9090/">http://localhost:9090/</a>, vscode会自动将程序停止在端点处。</p>
 <p><img src="../../img/debug.png" alt="alt 图片"></p>
+<h2 id="如何调试nodejs-内核js代码呢？（比如libnetjs下的代码）">如何调试nodejs 内核js代码呢？（比如/lib/net.js下的代码）</h2>
+<h3 id="修改launchjson">修改launch.json</h3>
+<p>只需要改动一下launch.json即可。</p>
+<ul>
+<li>将C++的启动添加一个参数，&quot;--inspect-brk=9090&quot;,</li>
+<li>增加一个调试项目 attch， 把新的debugger 附加到已经启动的进程上。</li>
+</ul>
+<p>改动后的launch.json如下：</p>
+<pre><code class="language-js">{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    &quot;version&quot;: &quot;0.2.0&quot;,
+    &quot;configurations&quot;: [
+      { // 先通过launch启动C++的lldb debugger，并设置启动参数--inspect-brk=9090
+        &quot;name&quot;: &quot;(lldb) Launch&quot;,
+        &quot;type&quot;: &quot;lldb&quot;,
+        &quot;request&quot;: &quot;launch&quot;,
+        &quot;program&quot;: &quot;/Users/jimmiezhang/wx_work/node14/node-master/out/Release/node&quot;,
+        &quot;args&quot;: [
+          &quot;--expose-internals&quot;,
+          &quot;--inspect-brk=9090&quot;,
+          &quot;/Users/jimmiezhang/wx_work/node14/node-master/test.js&quot;
+        ],
+        &quot;cwd&quot;: &quot;/Users/jimmiezhang/wx_work/node14/node-master/out/Release/&quot;,
+
+      },
+      { // 然后启动一个node的debugger，类型为attch， 附加到已经运行的9090的进程上。
+        &quot;type&quot;: &quot;node&quot;,
+        &quot;request&quot;: &quot;attach&quot;,
+        &quot;name&quot;: &quot;Attach&quot;,
+        &quot;port&quot;: 9090
+      },
+    ]
+}</code></pre>
+<h3 id="启动调试">启动调试</h3>
+<p>按照以下顺序启动即可</p>
+<ol>
+<li>先启动(lldb) Launch的debugger
+<img src="../../img/debuglldb.png" alt="alt 图片"></li>
+<li>然后启动Attach的debugger
+<img src="../../img/debugattch.png" alt="alt 图片"></li>
+</ol>
+<p>然后你就可以同时调试C++和js代码了。</p>
 </div>
 <script src="https://utteranc.es/client.js"
         repo="coderweek/coderweek.github.io"

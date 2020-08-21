@@ -6,7 +6,7 @@
 业务js代码调试，可参见nodejs官网调试指南。
 
 ## step1,下载nodejs源码安装包
-打开github上的仓库（https://github.com/nodejs/node， 克隆到本地
+打开github上的仓库（https://github.com/nodejs/node)， 克隆到本地
 
 ```js
 git clone https://github.com/nodejs/node.git

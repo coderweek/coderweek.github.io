@@ -47,20 +47,20 @@ int Start(int argc, char** argv) {
 
 可以看到，主要分为两部分，InitializeOncePerProcess()和main_instance.Run()。
 
-这里，作者先透漏一下这两部分的作用。
+这里，作者先透漏一下这两部分的作用：
 
 * InitializeOncePerProcess： 每个进程初始化一次，主要是
   * 注册build-in模块（即用C++写的模块，比如/src/tcp_wrap.cc）
   * 初始化v8
 
-简单来说，就是把C++模块注册好，以供后续调用。
+> 简单来说，就是把C++模块注册好，以供后续调用。
 
 * main_instance.Run: 
   * 初始化环境（创建一个env，后续都会用到这个变量）；
   * 加载环境中指定的东西，即加载app.js（实际上很复杂，我们后续一一分析），并执行；
   * 启动完成，并把uv_run跑起来。
 
-简单来说，就是把内置的js模块准备好，并允许业务的js代码。
+> 简单来说，就是把内置的js模块准备好，并允许业务的js代码。
 
 ## InitializeOncePerProcess探析
 

@@ -62,6 +62,8 @@ int Start(int argc, char** argv) {
 
 > 简单来说，就是把内置的js模块准备好，并允许业务的js代码。
 
+我们先看下整体的调用图：
+![alt 图片](../../img/nodestarttwosteps.png)
 ## InitializeOncePerProcess探析
 
 那我们就来看下，nodejs启动两大步（InitializeOncePerProcess和main_instance.Run）中的第一步InitializeOncePerProcess干了啥。
@@ -69,3 +71,32 @@ int Start(int argc, char** argv) {
 ## main_instance.Run探析
 
 那我们就来看下，nodejs启动两大步（InitializeOncePerProcess和main_instance.Run）中的第二步main_instance.Run干了啥。
+
+### loaders
+在main_instance.Run中，创建完env后，执行的env.RunBootstrapping中，分为两大步
+
+* BootstrapInternalLoaders: 启动/lib/internal/bootstrap/loaders.js
+* BootstrapNode： 启动/lib/internal/bootstrap/node.js
+
+/lib/internal/bootstrap/loaders.js是干啥的呢？
+
+首先明确以下概念：
+
+* process.binding: 历史遗留的buildin模块的绑定方法，现在基本不建议用。
+* process._linkedbinding: 用户自己开发的C++ addons
+* internalbinding: 新的build-in module绑定方法，也就是process.binding的替代者。不过这个方法用户不可见。
+
+从源码可以看出，process.binding就是在调用internalBinding
+
+```js
+process.binding = function binding(module) {
+    module = String(module);
+    // Deprecated specific process.binding() modules, but not all, allow
+    // selective fallback to internalBinding for the deprecated ones.
+    if (internalBindingWhitelist.has(module)) {
+      return internalBinding(module);
+    }
+    // eslint-disable-next-line no-restricted-syntax
+    throw new Error(`No such module: ${module}`);
+  };
+```

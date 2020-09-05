@@ -357,3 +357,188 @@ Module.prototype.require = function(id) {
 也就是说，包裹好的函数调用时，传入的require，就是Module._load。
 
 这就是Module._load一统user-land js模块的由来。
+
+### native模块加载
+所有的内部模块加载，分为两路：
+1. 一路是启动时，有C++代码通过ExecutionBootstrapper调用native模块；
+比如env.runBootStrapping中，调用了lib/internal/bootstrap/loaders.js。我们看下代码：
+```js
+MaybeLocal<Value> ExecuteBootstrapper(Environment* env,
+                                      const char* id,
+                                      std::vector<Local<String>>* parameters,
+                                      std::vector<Local<Value>>* arguments) {
+  EscapableHandleScope scope(env->isolate());
+  MaybeLocal<Function> maybe_fn =
+      NativeModuleEnv::LookupAndCompile(env->context(), id, parameters, env);
+  
+  ...
+
+  // 这里的fn，就是类似user-land中包裹后的函数。
+  // 只不过外面包裹的是类似function (ctx, isolate, arvc, argv){}
+  Local<Function> fn = maybe_fn.ToLocalChecked();
+  // 然后这里调用，然后传入参数。
+  MaybeLocal<Value> result = fn->Call(env->context(),
+                                      Undefined(env->isolate()),
+                                      arguments->size(),
+                                      arguments->data());
+
+  ...
+
+  return scope.EscapeMaybe(result);
+}
+
+```
+
+可以看到，这里最终调用了NativeModuleEnv::LookupAndCompile。其实它最后调用了NativeModuleLoader::LookupAndCompile
+
+2. native模块中，通过nativeModuleRequire调用另外一个模块。
+```js
+// lib/internal/bootstrap/loaders.js
+function nativeModuleRequire(id) {
+  if (id === loaderId) {
+    return loaderExports;
+  }
+
+  const mod = NativeModule.map.get(id);
+  // Can't load the internal errors module from here, have to use a raw error.
+  // eslint-disable-next-line no-restricted-syntax
+  if (!mod) throw new TypeError(`Missing internal module '${id}'`);
+  return mod.compileForInternalLoader();
+}
+
+...
+
+compileForInternalLoader() {
+    ...
+
+    try {
+      ...
+      const fn = compileFunction(id);
+      fn(this.exports, requireFn, this, process, internalBinding, primordials);
+      ...
+    } finally {
+      ...
+    }
+    ...
+    return this.exports;
+  }
+
+...
+
+const {
+  moduleIds,
+  compileFunction
+} = internalBinding('native_module');
+...
+```
+compileFunction是node_native_module_env.cc中的函数：
+
+```js
+// /src/node_native_module_env.cc
+void NativeModuleEnv::CompileFunction(const FunctionCallbackInfo<Value>& args) {
+  ...
+  MaybeLocal<Function> maybe =
+      NativeModuleLoader::GetInstance()->CompileAsModule(
+          env->context(), id, &result);
+  ...
+}
+
+// /src/node_native_module.cc
+
+MaybeLocal<Function> NativeModuleLoader::CompileAsModule(
+    Local<Context> context,
+    const char* id,
+    NativeModuleLoader::Result* result) {
+  ...
+  return LookupAndCompile(context, id, &parameters, result);
+}
+```
+
+可以看到，这里最终也是调用了NativeModuleLoader::LookupAndCompile
+
+那么我们就来看看这个NativeModuleLoader::LookupAndCompile到底是啥。
+
+```js
+// /src/node_native_module.cc
+MaybeLocal<Function> NativeModuleLoader::LookupAndCompile(
+    Local<Context> context,
+    const char* id,
+    std::vector<Local<String>>* parameters,
+    NativeModuleLoader::Result* result) {
+  
+  ...
+
+  // 尝试作为builtin模块加载
+  if (!LoadBuiltinModuleSource(isolate, id).ToLocal(&source)) {
+    return {};
+  }
+
+  // 到这里，表明不是builtin模块，因此正式开始加载逻辑
+  std::string filename_s = id + std::string(".js");
+  
+  ...
+
+  ScriptCompiler::Source script_source(source, origin, cached_data);
+
+  MaybeLocal<Function> maybe_fun =
+      ScriptCompiler::CompileFunctionInContext(context,
+                                               &script_source,
+                                               parameters->size(),
+                                               parameters->data(),
+                                               0,
+                                               nullptr,
+                                               options);
+
+  
+  Local<Function> fun = maybe_fun.ToLocalChecked();
+  
+  ...
+
+  return scope.Escape(fun);
+}
+```
+最终调用了ScriptCompiler::CompileFunctionInContext。这个函数代码如下：
+
+```js
+// src/deps/v8/src/api.cc
+MaybeLocal<Function> ScriptCompiler::CompileFunctionInContext(
+    Local<Context> v8_context, Source* source, size_t arguments_count,
+    Local<String> arguments[], size_t context_extension_count,
+    Local<Object> context_extensions[], CompileOptions options,
+    NoCacheReason no_cache_reason,
+    Local<ScriptOrModule>* script_or_module_out) {
+  Local<Function> result;
+
+  {
+    ...
+
+    i::Handle<i::JSFunction> scoped_result;
+    has_pending_exception =
+        !i::Compiler::GetWrappedFunction(
+             Utils::OpenHandle(*source->source_string), arguments_list, context,
+             script_details, source->resource_options, script_data, options,
+             no_cache_reason)
+             .ToHandle(&scoped_result);
+    result = handle_scope.Escape(Utils::CallableToLocal(scoped_result));
+  }
+
+  ...
+
+  return result;
+}
+```
+
+可以看到，它其实是i::Compiler::GetWrappedFunction(...).ToHandle(&scoped_result),把包裹后的函数付给了scoped_result，最终赋值给了result。
+
+GetWrappedFunction是/deps/v8/src/codegen/compile.cc中，包裹函数的方法。
+它的声明是这样的：
+
+```js
+MaybeHandle<JSFunction> Compiler::GetWrappedFunction(
+
+```
+
+可见它返回的是一个JSFunction。
+
+
+至此，加载native模块的逻辑分析完毕。

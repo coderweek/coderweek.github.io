@@ -1,9 +1,11 @@
 
-事先声明：本文分析基于nodejs 14版本; 
 [TOC]
-# nodejs服务启动以及工作全过程分析
 
-本文将分析一个普通的nodejs服务启动和工作的全部过程；将会涉及libuv；
+# 源码解读nodejs服务启动以及工作
+
+本文将从底层源码（C++/Js）分析一个普通的nodejs服务启动和工作的全部过程
+
+（nodejs源码基于nodejs 14版本)；
 
 ## 回顾一下nodejs如何启动服务
 按照nodejs官网上的样例，启动一个服务如下：
@@ -27,7 +29,7 @@ server.listen(port, hostname, () => {
 
 实际上，http模块是依赖于nodejs的另外一个原生模块net。
 
-那么net启动一个服务，是什么样子呢？我们看下直接使用net启动一个服务的样例：
+我们可以看下net启动一个服务，是什么样子呢？我们看下直接使用net启动一个服务的样例：
 
 ```js
 // 1.引入net
@@ -68,7 +70,7 @@ server.listen(9090, () => {
 
 接下来我们就看下net模块的主要功能，以及它是如何启动，并处理客户端请求的。
 
-## net模块
+## 源码解读（涉及net.js, tcp_wrap.cc, libuv等）
 ### net模块是什么？
 * 内建模块
   * nodejs是由c++编写的。核心的处理逻辑，都是c++语言开发的，这些模块官方称为build-in模块；
@@ -81,7 +83,7 @@ server.listen(9090, () => {
 
 net模块，即/lib/net.js, 就是原生模块，也叫native模块；是由js语言开发的。
 
-### net模块如何创建一个服务？
+### 如何创建一个服务？
 还是刚才的样例：
 ```js
 // connectionListener就是一个普通的回调函数，负责处理业务逻辑。
@@ -107,7 +109,7 @@ Server这里是一个构建函数，里面的代码大概50行，但核心主要
 
 接下来我们就来详细分析一下。
 
-### net模块启动服务过程
+### 启动服务过程
 
 一个普通的服务启动，无非要经过以下过程
 * 创建一个socket;
@@ -123,7 +125,6 @@ net.js模块也就是干了这些事情；只不过它把所有这些过程都�
 // lib/net.js中createServerHandle函数，大概1218行。
 handle = new TCP(TCPConstants.SERVER);
 ```
->（注：js模块，调用c++模块的方法，本文不展开，感兴趣的可以自己搜索。）
 
 new TCP做了啥？
 ```js
@@ -181,7 +182,7 @@ libuv的listen做了很多事情：
 
 至此，nodejs服务启动阶段完成。接下来，我们分析有客户端请求到来时，nodejs服务是如何处理的。
 
-### net模块处理请求过程
+### 处理请求过程
 nodejs使用C++开发的。因此nodejs服务，就是一个C++的进程在跑。
 
 这个进程中，只有一个线程。
@@ -272,7 +273,7 @@ tcp->connection_cb = cb;
 * 把业务服务注册到epoll中。
 * epoll监测到事件，然后调用业务开发指定的回调。
 
-### net模块如何处理高并发？
+### 如何处理高并发？
 
 经过上面的分析，你可能大概了解了一个请求的整个处理过程。但是nodejs服务又是怎么处理高并发呢？
 
@@ -329,7 +330,7 @@ const server = net.createServer((c) => {
 
 那么你会问，c.on('data')是怎么拿到数据的呢？这个客户端连接有数据时，是怎么触发这个data事件呢？
 
-### net模块拿到客户端连接后，怎么处理？
+### 拿到客户端连接后，怎么处理？
 上一节中，我们分析了一个服务如何拿到客户端的连接。拿到了客户端连接，并不一定表示马上有数据。客户端可能只是先发起一个连接，但是隔了10ms~1分钟，才发送真正的数据。
 
 由于10ms~1分钟，甚至更久，这个时间是不确定的。服务又不能干等着，因此必须把这个client connection也交给libuv（最终交给epoll）来盯着。
@@ -548,5 +549,3 @@ function addChunk(stream, state, chunk, addToFront) {
 ## 参考：
 
 https://cloud.tencent.com/developer/article/1630793 （libuv）
-
-https://cloud.tencent.com/developer/article/1624497 (stream)
